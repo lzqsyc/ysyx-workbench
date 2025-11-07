@@ -10,7 +10,7 @@ NVBOARD_OBJS := $(addprefix $(NVBOARD_BUILD_DIR)/, $(addsuffix .o, $(basename $(
 
 # The archive of NVBoard
 NVBOARD_ARCHIVE = $(NVBOARD_BUILD_DIR)/nvboard.a
-CXXFLAGS += -MMD -O3 $(shell sdl2-config --cflags)
+CXXFLAGS += -MMD -O3 $(shell sdl2-config --cflags) 
 
 $(NVBOARD_BUILD_DIR)/%.o: $(NVBOARD_SRC)/%.cpp
 	@echo + CXX "->" NVBOARD_HOME/$(shell realpath $< --relative-to $(NVBOARD_HOME))
@@ -34,3 +34,10 @@ nvboard-archive: $(NVBOARD_ARCHIVE)
 
 nvboard-clean:
 	rm -rf $(NVBOARD_BUILD_DIR)
+
+#*******************nbboard.mk 作用*****************#
+# 1 把nvboard的源码编译成一个静态库：nvboard.a
+# 2 把编译/链接所需的通用 flags（SDL2 的 cflags/libs 等）追加到你的 CXXFLAGS/LDFLAGS，
+#   从而让顶层 Makefile 在调用 Verilator 的 --build 时，用 -CFLAGS/-LDFLAGS 把这些参数转交给真正的编译器/链接器，
+#   并把 nvboard.a 链到最终可执行文件里。
+

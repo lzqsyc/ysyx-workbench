@@ -1,6 +1,12 @@
 # 示例工程
 
 先设置环境变量`NVBOARD_HOME`为NVBoard项目的路径, 然后执行`make run`.
+1  设置环境变量：
+   export NVBOARD_HOME=/home/l/ysyx/ysyx-workbench/nvboard
+2  环境变量添加到PATH中：
+   export PATH=$NVBOARD_HOME:$PATH
+3  指定动态链接器
+   export LD_LIBRARY_PATH=$NVBOARD_HOME/build:$LD_LIBRARY_PATH
 
 该示例的演示效果如下:
 1. 左边8个LED为流水灯效果
