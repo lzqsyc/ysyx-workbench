@@ -8,6 +8,6 @@
 !README.md
 !README.en.md
 !board/*
-!*.v
-!*.cpp
+.v
+.cpp
 build/
