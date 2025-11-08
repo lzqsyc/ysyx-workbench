@@ -48,7 +48,7 @@ SRC_AUTO_BIND := $(OBJ_DIR)/auto_bind.cpp
 # 目标文件
 NV_TARGET   := $(OBJ_DIR)/nv_$(TOP_MODULE)
 SIM_TARGET	:= $(OBJ_DIR)/sim_$(TOP_MODULE)
-WAVE_FILE   := $(OBJ_DIR)/$(TOP_MODULE).$(TRACE)
+WAVE_FILE   := $(OBJ_DIR)/$(TOP_MODULE).vcd
 
 # ================= 工具与 Verilator 开关 =========================#
 VERILATOR       := verilator
@@ -56,31 +56,34 @@ GTKWAVE         := gtkwave
 VERILATED_FLAGS := --cc --exe --build --trace --Wall --top-module $(TOP_MODULE) -Mdir $(OBJ_DIR)
 
 # ======================= nvbvoard 仿真 ==========================#
+ifeq ($(MODE),nv)
 $(SRC_AUTO_BIND): $(NXDC_FILES)
 	@mkdir -p $(OBJ_DIR)
 	python3 $(NVBOARD_HOME)/scripts/auto_pin_bind.py $^ $@
 # 添加 nvboard依赖文件
 CSRC_FILE += $(SRC_AUTO_BIND)
 include $(NVBOARD_HOME)/scripts/nvboard.mk
-CXXFLAGS  += -I$(NVBOARD_HOME)/usr/include -DTOP_NAME="\"V$(TOP_MODULE)\""
+NV_CXXFLAGS  += -I$(NVBOARD_HOME)/usr/include -DTOP_NAME="\"V$(TOP_MODULE)\""
+NV_LDFLAGS	  = $(LDFLAGS)
 # nvboard 仿真规则
 $(NV_TARGET): $(VSRC_FILE) $(CSRC_FILE) $(NVBOARD_ARCHIVE)
 	@mkdir -p $(OBJ_DIR)
 	$(VERILATOR) $(VERILATED_FLAGS) \
 		-o nv_$(TOP_MODULE) $^ \
-		$(addprefix -CFLAGS , $(CXXFLAGS)) \
-		$(addprefix -LDFLAGS , $(LDFLAGS))
+		$(addprefix -CFLAGS , $(NV_CXXFLAGS)) \
+		$(addprefix -LDFLAGS , $(NV_LDFLAGS))
 run-nv:$(NV_TARGET)
 	cd $(OBJ_DIR) && ./nv_$(TOP_MODULE)
+endif
 
-# ======================= nvbvoard 仿真 ==========================#
+# ======================= gtkwave 仿真 ==========================#
+ifeq ($(MODE),sim)
 $(SIM_TARGET): $(VSRC_FILE) $(CSRC_FILE)
 	@mkdir -p $(OBJ_DIR)
-	$(VERILATOR) $(VERILATED_FLAGS) -o sim_$(TOP_MODULE) $^
+	$(VERILATOR) $(VERILATED_FLAGS) -o sim_$(TOP_MODULE) $(VSRC_FILE) $(CSRC_FILE)
 run-sim: $(SIM_TARGET)
-	cd $(OBJ_DIR) && ./sim_$(TOP_MODULE)
-	$(GTKWAVE) $(WAVE_FILE) 
-
+	cd $(OBJ_DIR) && ./sim_$(TOP_MODULE) && $(GTKWAVE) $(TOP_MODULE).vcd 
+endif
 clean:
 	rm -rf $(OBJ_DIR)
 

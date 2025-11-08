@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <Vlight.h>
-#include <verilated.h>
 #include <nvboard.h>
 
 static Vlight *dut = new Vlight; ;
