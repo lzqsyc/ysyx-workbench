@@ -8,4 +8,5 @@
 !README.md
 !README.en.md
 !board/*
+!prj_*/*
 build/
