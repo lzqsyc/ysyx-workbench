@@ -26,10 +26,10 @@ module mux2_1 (
     output reg y
 );
     always(*)
-            if(s == 1'b0)
-                begin y = a;end
-            else 
-                begin y = b;end
+        if(s == 1'b0)
+            begin y = a;end
+        else 
+            begin y = b;end
 
 endmodule
 */
