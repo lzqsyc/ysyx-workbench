@@ -8,13 +8,8 @@
 #	├─ prj_2/
 #	└─ Makefile
 #	 交互 + 写波形（默认 vcd）
-#	make PROJ=prj_2 TOP_MODULE=test run
-#	 改为 FST 波形
-#	make PROJ=prj_2 TOP_MODULE=test TRACE=fst run
-#	#打开波形
-#	make PROJ=prj_2 TOP_MODULE=test sim
-#	 无 NVBoard 的回放版
-#	make PROJ=prj_2 TOP_MODULE=test run_headless
+#	make PROJ=prj_2 TOP_MODULE=test MODE=nv/sim run-nv/sim
+
 
 # -Mdir $(OBJ_DIR) 用于指定verilator --build 创建obj_dir的路径 从而-o接生成文件 不接路径 
 # 不要同时在 Make(目标路径) 和 verilator -o(目标路径) 两处加路径，避免“路径叠加”
