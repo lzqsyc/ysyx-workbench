@@ -1,0 +1,5 @@
+top=mux2_1
+a SW0
+b SW1
+s BTNC
+y LD0
