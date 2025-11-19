@@ -12,4 +12,5 @@
 !init.sh
 !/nvboard/
 !/nvboard/** 
+/nvboard/RTL_prj/**/*_obj/
 /fceux-am
