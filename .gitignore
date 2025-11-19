@@ -1,16 +1,26 @@
-*.*
+# 忽略所有文件和文件夹
 *
 !*/
-!/nemu/*
-!/nexus-am/*
-!/nanos-lite/*
-!/navy-apps/*
-!/npc/*
+
+# 特别包含需要的顶级目录
+!/nemu/
+!/nexus-am/
+!/nanos-lite/
+!/navy-apps/
+!/npc/
+!/nvboard/
+
+# 递归包含 nvboard 下的所有内容
+!/nvboard/**
+
+# 特别忽略 RTL_prj 下各项目中的 _obj 目录
+/nvboard/RTL_prj/**/*_obj/
+
+# 包含其他必要的文件
 !Makefile
 !README.md
 !.gitignore
 !init.sh
-!/nvboard/
-!/nvboard/** 
-/nvboard/RTL_prj/**/*_obj/
+
+# 排除fceux-am
 /fceux-am
