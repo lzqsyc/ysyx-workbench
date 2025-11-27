@@ -21,7 +21,7 @@ module com_fsm (
         if (!rst_n) begin
             quit_clk <= 1'b0;
         end else begin
-            quit_clk <= pi_quit;                // 打一拍
+            quit_clk <= pi_quit;                // 打一拍  
         end
     end
 

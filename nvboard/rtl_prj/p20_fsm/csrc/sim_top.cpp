@@ -22,11 +22,11 @@ void verilator_quit(){
     delete dut;
     delete tfp;
 }
+
 void dump_down_wave(){
     dut->eval();
     tfp->dump(sim_time);
-    sim_time +=5;
-    
+    sim_time +=5;    
 }
 
 void dump_up_wave(){
@@ -35,15 +35,6 @@ void dump_up_wave(){
     printf("           po_cola=%d, po_money=%d, dout=%d\n",dut->po_cola,dut->po_money,dut->dout);
     tfp->dump(sim_time);
     sim_time +=5;
-    
-}
-
-
-static void single_cycle() {
-    dut->clk = 0; 
-    dump_down_wave();
-    dut->clk = 1; 
-    dump_up_wave();
 }
 
 void set_input(int one,int half,int quit){
@@ -52,122 +43,87 @@ void set_input(int one,int half,int quit){
     dut->pi_quit = quit;
 }
 
+void single_cycle(int a,int b,int c) { 
+    set_input(a,b,c);
+    dut->clk = 0; 
+    dump_down_wave();   
+    dut->eval();
+    dut->clk = 1; 
+    dump_up_wave();
+
+}
+
 int main(){
     printf("\n=== gtkwave simulation start ===\n");
     verilator_init();
 
     // 初始化所有
     printf("\n[1] initial state :\n");
-    set_input(0,0,0);
     dut->rst_n = 1;
-    single_cycle();
+    single_cycle(0,0,0);
 
     // 应用复位
     printf("\n[2] applying reset :\n");
     dut->rst_n = 0;
     for (int i = 0; i < 2; i++)
     {
-        single_cycle();
+        single_cycle(1,0,1);
     }
 
     // 释放复位
     printf("\n[3] releaseing reset :\n");
     dut->rst_n = 1;
-    single_cycle();
-
+    single_cycle(0,0,0);
+   
     // 测试场景1：正常购买：1+0.5+0.5+0.5
     printf("\n[4] Test: Normal purchase (1+0.5+0.5+0.5)\n");
-    set_input(1,0,0);
-    single_cycle(); 
-
-    set_input(0,1,0);
-    single_cycle();
-
-    set_input(0,1,0);
-    single_cycle();
-
-    set_input(0,1,0);
-    single_cycle();
+    single_cycle(1,0,0); 
+    single_cycle(0,1,0);
+    single_cycle(0,1,0);
+    single_cycle(0,1,0);
     // 清零输入，观察状态
-    set_input(0, 0, 0);
-    single_cycle();
-    
+    single_cycle(0, 0, 0);
+
      // 测试场景2：中途退钱
     printf("\n[5] Test: Refund midway\n");
-    set_input(0, 1, 0);  // 投0.5元
-    single_cycle();
-    
-    set_input(1, 0, 0);  // 投1元
-    single_cycle();
-    
-    set_input(0, 0, 1);  // 按退钱键
-    single_cycle();
-    
-    set_input(0, 0, 0);  // 释放退钱键
+    single_cycle(0,1,0);
+    single_cycle(1,0,0);
+    single_cycle(0,0,1);     // 按退钱键
+    single_cycle(0,0,0);    // 释放退钱键
 
     // 测试场景3：找零测试
     printf("\n[6] Test: Change (1 + 1 + 1 = 找零0.5)\n");
-    set_input(1, 0, 0);  // 投1元
-    single_cycle();
-    
-    set_input(0, 1, 0);  // 投0.5元
-    single_cycle();
-
-    set_input(0, 1, 0);  // 投0.5元
-    single_cycle();
-
-    set_input(1, 0, 0);  // 再投1元 (应该出可乐+找零)
-    single_cycle();
-    
-    set_input(0, 0, 0);
-    single_cycle();
+    single_cycle(1,0,0);
+    single_cycle(0,1,0);
+    single_cycle(0,1,0);
+    single_cycle(1,0,0);
+    single_cycle(0,0,0);
 
     // fsm连续四个0、1测试 
     printf("\n[7] Test:FSM)\n");       
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(1,0,0);           
-    single_cycle();
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(0,0,0);           
-    single_cycle();
-    set_input(0,0,0);           
-    single_cycle();
-    set_input(0,0,0);           
-    single_cycle();
-    set_input(0,0,0);           
-    single_cycle();             
-    set_input(0,0,0);           
-    single_cycle();             
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(1,0,0);           
-    single_cycle();
-    set_input(0,1,0);           
-    single_cycle();
-    set_input(0,0,0);           
-    single_cycle();
-    set_input(0,0,0);           
-    single_cycle();
-    set_input(0,0,0);           
-    single_cycle();
-    set_input(0,0,0);           
-    single_cycle();             
-    set_input(0,0,0);     
+    single_cycle(0,1,0);           
+    single_cycle(0,1,0);           
+    single_cycle(0,1,0);           
+    single_cycle(0,1,0);           
+    single_cycle(0,1,0);           
+    single_cycle(1,0,0);           
+    single_cycle(0,1,0);           
+    single_cycle(0,0,0);           
+    single_cycle(0,0,0);           
+    single_cycle(0,0,0);           
+    single_cycle(0,0,0);                
+    single_cycle(0,0,0);                  
+    single_cycle(0,1,0);           
+    single_cycle(0,1,0);           
+    single_cycle(1,0,0);          
+    single_cycle(0,1,0);           
+    single_cycle(0,0,0);           
+    single_cycle(0,0,0);           
+    single_cycle(0,0,0);           
+    single_cycle(0,0,0);                 
+    single_cycle(0,0,0); 
     // 结束延迟一个0输入时钟周期
-    set_input(0,0,0);
-    single_cycle();
+    single_cycle(0,0,0);
     verilator_quit();
     printf("\n=== gtkwave simulation end ===\n");
 }
