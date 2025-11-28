@@ -20,7 +20,7 @@ module vga_pic(
     GREEN   = 16'h07E0      , //绿色
     CYAN    = 16'h07FF      , //青色
     BLUE    = 16'h001F      , //蓝色
-    PURPPLE = 16'hF81F      , //紫色
+    PURPLE = 16'hF81F      , //紫色
     BLACK   = 16'h0000      , //黑色
     WHITE   = 16'hFFFF      , //白色
     GRAY    = 16'hD69A      ; //灰色
@@ -35,7 +35,7 @@ always@(posedge vga_clk or negedge rst_n) begin
         (pix_y < (V_VALID/10)*4): pix_data <= GREEN;
         (pix_y < (V_VALID/10)*5): pix_data <= CYAN;
         (pix_y < (V_VALID/10)*6): pix_data <= BLUE;
-        (pix_y < (V_VALID/10)*7): pix_data <= PURPPLE;
+        (pix_y < (V_VALID/10)*7): pix_data <= PURPLE;
         (pix_y < (V_VALID/10)*8): pix_data <= BLACK;
         (pix_y < (V_VALID/10)*9): pix_data <= WHITE;
         (pix_y < V_VALID): pix_data <= GRAY;
