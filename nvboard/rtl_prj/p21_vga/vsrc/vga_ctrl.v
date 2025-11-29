@@ -74,7 +74,6 @@ module vga_ctrl(
                           (cnt_v >= V_SYNC + V_BACK + V_TOP )                  && 
                           (cnt_v <= V_SYNC + V_BACK + V_TOP + V_VALID)         ?  1'b1 : 1'b0;
 
-
     // vga有效显示区域像素点坐标
     assign pix_x = (pix_data_req == 1'b1) ? (cnt_h - (H_SYNC + H_BACK + H_LEFT - 1'b1)) : no_valid_addr ;
     assign pix_y = (pix_data_req == 1'b1) ? (cnt_v - (V_SYNC + V_BACK + V_TOP  - 1'b1)) : no_valid_addr ;
