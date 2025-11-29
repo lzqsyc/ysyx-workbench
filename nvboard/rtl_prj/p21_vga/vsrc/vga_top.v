@@ -1,23 +1,29 @@
 module vga_top(
      clk
-    ,rst_n
+    ,sys_rst_n
     ,hsync
     ,vsync
     ,rgb
 );
-    input   wire   clk, rst_n;
+    input   wire   clk, sys_rst_n;
     output  wire  hsync,vsync;
     output  wire  [15:0]  rgb;
 
-    wire              vga_clk;
+    wire        vga_clk,rst_n;
     wire    [9:0] pix_x,pix_y;
-    wire    [15:0]  pix_data ;
+    wire    [15:0]   pix_data;
+    wire               locked;
+    
+    assign rst_n = sys_rst_n && locked;
 
-    clk_div2 u_clk_div2 (
-    .clk        (clk    ),
-    .rst_n      (rst_n  ),
-    .clk_out    (vga_clk)
+    pll_div2 u_pll_div2 (
+	 .areset   (!sys_rst_n)
+    ,.inclk0   (clk)
+    ,.c0       (vga_clk)
+    ,.locked   (locked)
 );
+
+
 
     vga_pic u_vga_pic (
     .vga_clk     (vga_clk),

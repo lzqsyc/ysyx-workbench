@@ -64,19 +64,19 @@ module vga_ctrl(
 
     // vga 显示有效区域时钟标志位
     assign rgb_valid = (cnt_h >= H_SYNC + H_BACK + H_LEFT)            && 
-                       (cnt_h <= H_SYNC + H_BACK + H_LEFT + H_VALID ) &&
+                       (cnt_h <  H_SYNC + H_BACK + H_LEFT + H_VALID ) &&
                        (cnt_v >= V_SYNC + V_BACK + V_TOP)             && 
-                       (cnt_v <= V_SYNC + V_BACK + V_TOP + V_VALID )  ?  1'b1 : 1'b0;
+                       (cnt_v <  V_SYNC + V_BACK + V_TOP + V_VALID )  ?  1'b1 : 1'b0;
 
     // vga显示有效区域超前一个时钟周期请求标志
     assign pix_data_req = (cnt_h >= H_SYNC + H_BACK + H_LEFT -1'b1)            && 
-                          (cnt_h <= H_SYNC + H_BACK + H_LEFT + H_VALID - 1'b1) &&
+                          (cnt_h <  H_SYNC + H_BACK + H_LEFT + H_VALID - 1'b1) &&
                           (cnt_v >= V_SYNC + V_BACK + V_TOP )                  && 
-                          (cnt_v <= V_SYNC + V_BACK + V_TOP + V_VALID)         ?  1'b1 : 1'b0;
+                          (cnt_v <  V_SYNC + V_BACK + V_TOP + V_VALID)         ?  1'b1 : 1'b0;
 
     // vga有效显示区域像素点坐标
     assign pix_x = (pix_data_req == 1'b1) ? (cnt_h - (H_SYNC + H_BACK + H_LEFT - 1'b1)) : no_valid_addr ;
-    assign pix_y = (pix_data_req == 1'b1) ? (cnt_v - (V_SYNC + V_BACK + V_TOP  - 1'b1)) : no_valid_addr ;
+    assign pix_y = (pix_data_req == 1'b1) ? (cnt_v - (V_SYNC + V_BACK + V_TOP        )) : no_valid_addr ;
 
     // rgb：vga时序控制有效显示区域时钟内，将外部处理好的有效图像输出，消隐期显示黑色（0黑色，vga标准）
     assign rgb = (rgb_valid == 1'b1 ) ? pix_data : 16'b0;    
@@ -111,4 +111,9 @@ endmodule
     在时钟处于：cnt_h=143,cnt_v=34时刻，系统在请求有效坐标点为(pix_x,pix_y)=(0,0)的数据
     真正显示（0，0）位置像素是在下一时钟周期：cnt_h=144,cnt_v=35时刻，也刚好对应vga有效显示图像区域的时钟周期。完美与vga实现同步匹配显示。
     确保当VGA扫描到有效显示区域开始位置时，第一个像素的数据已经准备好。与第一问呼应
+
+5. 为什么有效区域时钟计数时开始点为 >= 结束点<
+    有效区域定义为从起始点 ——> 起始点+有效长度-1的区间。
+    (cnt_h >= 144) && (cnt_h < 784) : 144, 145, 146, ..., 783（共640个像素）
+    场逻辑一致
 */
