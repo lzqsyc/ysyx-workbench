@@ -23,6 +23,9 @@
 !/nvboard/**
 nvboard/RTL_prj/*/*_obj/
 
+# 包含 nemu 所有文件，但排除特定的目录
+!/nemu/
+!/nemu/**
 # 排除fceux-am
 /fceux-am
 /am-kernels
