@@ -24,7 +24,7 @@
 
 //========================= Token 类型 ====================================//
 enum {
-  TK_NOTYPE = 256, TK_EQ,TK_NUM,TK_REG
+  TK_NOTYPE = 256, TK_EQ,TK_16NUM,TK_NUM,TK_REG
 
   /* TODO: Add more token types */
 
@@ -37,10 +37,9 @@ static struct rule {
 } rules[] = {
   {" +", TK_NOTYPE},                      // 空格       256
   {"==",TK_EQ},                           // 等于       257
-  {"[0-9]+", TK_NUM},                     // 十进制整数  258
-  {"\\$[a-z][0-9]+",TK_REG},                // 寄存器     259
-  {"\\$[a-z]{2}",TK_REG},  
-  {"\\$[0-9]+",TK_REG}, 
+  {"0[xX][0-9a-fA-F]+",TK_16NUM},         // 16进制     258
+  {"[0-9]+", TK_NUM},                     // 十进制整数  259
+  {"\\$([A-Za-z][A-Za-z0-9]*|[0-9]+)", TK_REG},
   {"\\+", '+'},                           // 加号       43
   {"-", '-'},                             // 减号       45
   {"\\*", '*'},                           // 乘号       42
@@ -50,6 +49,17 @@ static struct rule {
 
 };
 #define NR_REGEX ARRLEN(rules)    // 自动计算rules结构体数组元素个数
+
+static word_t parse_num(const char *s, bool *success){
+  char *endptr = NULL;
+  word_t val = strtoull(s,&endptr,0);
+  if (endptr == s || *endptr != '\0' ){
+    printf("自动解析数值转化失败！请检查输入");
+    *success = false;
+    return 0;
+  } 
+  return val;
+}
 
 //============== 编译 rules[] Tokens 与正则表达式一一对应 ==============================//
 static regex_t re[NR_REGEX] = {}; // re[] 是一个regex_t 结构体数组，每个 regex_t 结构体代表一个已编译的正则表达式。
@@ -70,11 +80,13 @@ void init_regex() {
 // ================================ 正则表达式词法分析 ===============================//
 typedef struct token {
   int type;
-  char str[32];
+  char str[256];
 } Token;
 
-// 结构体数组tokens 用于存放词法分析得到的所有 token（记号） __attribute__((used))：防止编译器因“未使用”而优化掉该变量。
-static Token tokens[32] __attribute__((used)) = {};       
+// 结构体数组tokens 用于存放词法分析得到的所有 token（记号）
+// 增加容量并在词法分析时检查边界，防止长表达式导致缓冲区溢出
+#define MAX_TOKENS 256
+static Token tokens[MAX_TOKENS] __attribute__((used)) = {};
 static int nr_token __attribute__((used))  = 0;           // 记录当前已经识别出的 token 数量
 
 static bool make_token(char *e) {
@@ -100,10 +112,14 @@ static bool make_token(char *e) {
             // 空格，不保存，跳过
             break;
           default: 
+            if (nr_token >= MAX_TOKENS) {
+              printf("too many tokens: exceed %d\n", MAX_TOKENS);
+              return false;
+            }
             tokens[nr_token].type = rules[i].token_type;
-            int copy_len = substr_len < 31 ? substr_len : 31;
-            strncpy(tokens[nr_token].str,substr_start,copy_len);
-            tokens[nr_token].str[copy_len] = "\0";
+            int copy_len = substr_len < (int)sizeof(tokens[nr_token].str) - 1 ? substr_len : (int)sizeof(tokens[nr_token].str) - 1;
+            strncpy(tokens[nr_token].str, substr_start, copy_len);
+            tokens[nr_token].str[copy_len] = '\0';
             nr_token++;
             break;
         }
@@ -122,18 +138,62 @@ static bool make_token(char *e) {
 
 // ============================== 递归求值 =======================================//
 // 检查tokens[]表达式始末是否有括号，以及括号是否合法
-int check_parentheses(int l,int r){
-
-  return 0;
+int check_parentheses(int l, int r) {
+  // 表达式最边侧主要有一个不是括号对，直接返回-1表达整个表达式肯定不是被()括起来
+  if (tokens[l].type != '(' || tokens[r].type != ')') return -1;
+  int paren_level = 0;
+  // 表达式左右两边有括号对，但是要去检验是不是将整个表达式括起来，防止：（）+（）系列
+  // 进入for循环则表达式左侧一定为'()'，那么需要在检查到最左侧')' 之前，l'('闭合，说明表达式整体未被扩 
+  // 所以在遇到一个')'就立即检查是否闭合
+  for (int i = l + 1; i < r; i++) {
+    if (tokens[i].type == '(') paren_level++;       // (())+()
+    else if (tokens[i].type == ')') {
+      if (paren_level == 0) return -1; 
+        paren_level--;
+    }
+  }
+  return paren_level == 0 ? 0 : -1;
 }
 // 利用运算法规则寻找主运算法即是最低等级运算符位置
-int find_main_operator(int l, int r){
-  int op = 0;
-
+int get_priortiy(int type){
+  switch (type){
+    case TK_EQ : return 0;
+    case   '+' : return 1;
+    case   '-' : return 1;
+    case   '*' : return 2;
+    case   '/' : return 2;
+    default    : return 20;   // 非运算符
+  }
+}
+int find_main_operator(int l, int r,bool *success){
+  int paren_level = 0;
+  int min_priority = 20;
+  int op = -1;
+  for ( int i = l; i <= r; i++){
+    if (tokens[i].type == '('){
+      paren_level++;
+    } else if (tokens[i].type == ')'){
+      paren_level--;
+    } else if (paren_level == 0){
+  // 逐个扫描获取非括号内的运算符等级
+      int pri = get_priortiy(tokens[i].type);
+  // 设计逻辑：逐个比较等级：等级低的覆盖等级大的，同一等级的，位于表达式更后面的覆盖前面的作为主运算符
+      if (pri < min_priority || (pri == min_priority && i > op)){
+        min_priority = pri;
+        op = i;
+      }
+    }
+  }
+  // op 未变 找不到主运算符则算法表达式错误，传出success = false  
+  if (op == -1) {
+    *success = false;
+    printf("No main operator found\n");
+    return 0;
+  }
   return op;
 }
 // 递归处理表达式求值
-word_t eval(int l,int r,bool *success){
+word_t eval(int l,int r,bool *success,bool *hex){
   word_t val1,val2;
   if (l > r){
     printf("Bad expression\n");
@@ -142,33 +202,54 @@ word_t eval(int l,int r,bool *success){
   } else if (l == r){
     // l==r ：数字类型，寄存器类型
     switch (tokens[l].type){
-      case TK_NUM : return atoi(tokens[l].str);
-      case TK_REG : return isa_reg_str2val(tokens[l].str,&success);
-      default: *success = false; return 0;
+      case TK_16NUM : return parse_num(tokens[l].str,success);
+      case TK_NUM   : return parse_num(tokens[l].str,success);
+      case TK_REG   : * hex = true ;return isa_reg_str2val(tokens[l].str,success); 
+      default: 
+      *success = false; return 0;
     }
   } else if (check_parentheses(l,r) == 0){
-    return eval(l+1,r-1,success);
-  } else {
-    int op = find_main_operator(l,r);
-    val1 = eval(l,op-1,success);
-    val2 = eval(op+1,r,success);
-    switch (tokens[op].type) {
-      case '+': return val1 + val2;
-      case '-': return val1 - val2;
-      case '*': return val1 * val2;
-      case '/': return val1 / val2;
-      case TK_EQ: return val1 == val2;
-      // 其它类型如 TK_NUM、TK_REG、括号等在递归出口已处理
-      default: assert(0); // 未知类型直接报错
+    // 括号对检查合法，且表达式两边都存在括号，去除括号再次递归
+      return eval(l+1,r-1,success,hex);
+  } else {        
+    // 表达式非整体被括号，进入找主运算符拆分两个表达式重复递归                                                                          
+      int op = find_main_operator(l,r,success);
+      // 利用*success 检查主运算符
+      if (*success == false) return 0;
+      val1 = eval(l,op-1,success,hex);
+      val2 = eval(op+1,r,success,hex);
+      switch (tokens[op].type) {
+        case '+': return val1 + val2;
+        case '-': return val1 - val2;
+        case '*': return val1 * val2;
+        case '/':
+          if (val2 == 0) {
+            printf("division by zero\n");
+            *success = false;
+            return 0;
+          }
+          return val1 / val2;
+        case TK_EQ: return val1 == val2;
+        // 其它类型如 TK_NUM、TK_REG、括号等在递归出口已处理
+        default: assert(0); // 未知类型直接报错
     }
-
   }
 }
-word_t expr(char *e, bool *success) {
+
+word_t expr(char *e, bool *success, bool *hex) {
   if (!make_token(e)) {
     *success = false;
     return 0;
   } else{
-  return eval(0,nr_token-1,success);
+  // 检查表达式是否存在16进制token
+    for (int i = 0; i < nr_token; i++){
+      if (tokens[i].type == TK_16NUM){
+        *hex = true;
+        break;
+      } 
+    } 
+    *success = true;
+  // 进入表达式求值递归求值处理之前，先将success设置为ture,eval求值过程中如果有错误提前返回false 结束当前求值
+  return eval(0,nr_token-1,success,hex);
   }
 }
