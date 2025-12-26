@@ -7,10 +7,11 @@
 - [3. 运行流程分析 (Execution Flow)](#3-运行流程分析-execution-flow)
 - [4. 简易调试器 (SDB) 开发准备](#4-简易调试器-sdb-开发准备)
   - [A. 命令解析框架 (sdb.c)](#a-命令解析框架-sdbc)
-   - [B. 表达式求值 (expr.c)](#b-表达式求值-exprc)
-      - [词法分析与递归求值详细处理过程](#词法分析与递归求值详细处理过程)
-      - [表达式求值与 SDB 集成中的 bool success 设计总结](#表达式求值与-sdb-集成中的-bool-success-设计总结)
-      - [表达式生成器与验证（从 0 到 1）](#gen-expr)
+     - [B. 表达式求值 (expr.c)](#b-表达式求值-exprc)
+        - [词法分析与递归求值详细处理过程](#词法分析与递归求值详细处理过程)
+        - [表达式求值与 SDB 集成中的 bool success 设计总结](#表达式求值与-sdb-集成中的-bool-success-设计总结)
+        - [Makefile 与运行时环境变量交互](#makefile-env)
+        - [表达式生成器与验证（从 0 到 1）](#gen-expr)
   - [C. 监视点 (watchpoint.c)](#c-监视点-watchpointc)
   - [D. 寄存器访问 (isa.h / reg.c)](#d-寄存器访问-isah--regc)
 
@@ -18,17 +19,11 @@
 
 # NEMU 项目设计与架构分析
 
-## 1. 整体架构概览
-
-NEMU (NJU Emulator) 的设计遵循 **"程序 = 状态机"** 的核心思想。整个模拟器主要由以下几个部分组成：
-
 *   **Monitor (监控器)**: 相当于模拟器的“外壳”或“操作系统”。它负责初始化、加载程序、提供用户交互界面（SDB）。
 *   **CPU (中央处理器)**: 负责取指、译码、执行。这是模拟器的核心。
-*   **Memory (存储器)**: 模拟物理内存和虚拟内存。
 *   **Device (设备)**: 模拟外设（如串口、时钟、VGA等）。
 
 ## 2. 代码目录结构与功能
-
 关键目录及其功能如下：
 
 *   `src/nemu-main.c`: **入口函数**。程序的起点。
@@ -39,13 +34,11 @@ NEMU (NJU Emulator) 的设计遵循 **"程序 = 状态机"** 的核心思想。�
         *   `expr.c`: 表达式求值模块（用于 `p` 命令）。
         *   `watchpoint.c`: 监视点池管理（用于 `w` 命令）。
 *   `src/cpu/`: **CPU 模拟**。
-    *   `cpu-exec.c`: 指令执行的主循环 (`cpu_exec`)。
 *   `src/engine/`: 模拟引擎（解释器模式）。
 *   `include/`: 头文件，定义了各种数据结构和接口。
     *   `isa.h`: 定义了 ISA 相关的接口（如寄存器结构）。
 
 ## 3. 运行流程分析 (Execution Flow)
-
 程序的生命周期如下：
 
 1.  **启动 (`src/nemu-main.c`)**:
@@ -55,7 +48,6 @@ NEMU (NJU Emulator) 的设计遵循 **"程序 = 状态机"** 的核心思想。�
 2.  **初始化 (`src/monitor/monitor.c`)**:
     *   解析参数（如 `-l` 日志, `-b` 批处理模式）。
     *   `load_img()`: 将客户程序（Guest Program）镜像加载到模拟内存中。
-    *   `init_sdb()`: 初始化调试器相关结构（如正则引擎、监视点池）。
 
 3.  **进入主循环 (`src/monitor/sdb/sdb.c` -> `engine_start`)**:
     *   如果是批处理模式，直接运行。
@@ -146,6 +138,67 @@ NEMU (NJU Emulator) 的设计遵循 **"程序 = 状态机"** 的核心思想。�
 `bool success` 是表达式求值模块与 SDB 命令行集成的关键标志，保证了表达式分析、计算和错误处理的完整性与一致性。  
 通过递归传递和集中判断，实现了高效、健壮的表达式求值与用户交互逻辑。
 
+<a id="makefile-env"></a>
+#### Makefile 与运行时环境变量交互
+
+为方便批量生成测试样本，`tools/gen-expr/Makefile` 会在运行 `gen-expr` 可执行文件时，通过环境变量把配置信息传递给程序，程序端通过标准库函数 `getenv()` 读取这些值并据此调整行为。常见变量：
+
+- `GEN_N`：生成条数（整数）。`gen-expr.c` 中通过 `getenv("GEN_N")` 读取字符串并用 `strtol()` 解析为整数；若不存在或解析失败则使用默认值（示例中为 `1`）。
+- `GEN_OUT`：输出文件路径（字符串），程序调用 `getenv("GEN_OUT")`；若未设置则默认写入当前工作目录下的 `input` 文件。
+
+Makefile 端示例（`tools/gen-expr/Makefile` 的 `run` 目标）：
+
+```makefile
+run: $(OUT)
+	@GEN_N=$(gen_n) GEN_OUT=$(abspath $(CURDIR)/../..)/input \
+	$(OUT)
+```
+
+使用说明与常见误解：
+
+- 在 Makefile 中，覆盖变量要使用 Makefile 定义的名称（示例中为 `gen_n`），例如：`make -C tools/gen-expr run gen_n=100`。直接使用 `make run n=100` 不会生效，除非 Makefile 对 `n` 做了映射。
+- 程序通常把前若干条（如前 10 条）打印到 `stderr` 作为预览，但 `GEN_OUT` 文件中会包含完整的 `GEN_N` 条目。
+
+下面列出程序常用的环境相关 C 标准库函数及简要用法，方便理解 Makefile ↔ 程序的交互实现。
+
+##### C 库：环境相关函数（常用）
+
+- `char *getenv(const char *name);`
+   - 功能：读取环境变量 `name` 的值，返回指向值字符串的指针；若变量不存在返回 `NULL`。
+   - 注意：返回的指针指向进程环境区的内存，不应由调用者释放；该内存可被后续 `setenv`/`putenv` 修改。
+   - 示例：
+      ```c
+      const char *v = getenv("GEN_N");
+      if (v) {
+         char *end = NULL;
+         long n = strtol(v, &end, 10);
+         if (end != v && *end == '\0' && n > 0) gen_n = (int)n;
+      }
+      ```
+
+- `int setenv(const char *name, const char *value, int overwrite);`
+   - 功能：在环境中设置或修改 `name` 的值为 `value`。
+   - 参数：`overwrite` 为非零时允许覆盖已存在的变量；返回 `0` 成功，返回 `-1` 出错并设置 `errno`。
+   - 示例：`setenv("GEN_OUT", "/path/to/input", 1);`
+
+- `int putenv(char *string);`
+   - 功能：将形如 `"NAME=VALUE"` 的字符串直接加入环境；环境保留对该字符串的指针（实现可能不复制），因此传入的字符串不能在之后被释放或修改。
+   - 返回 `0` 成功，`-1` 出错。
+   - 注意：`putenv` 与 `setenv` 行为不同，使用时需注意内存所有权。
+
+- `int unsetenv(const char *name);`
+   - 功能：从环境中删除变量 `name`。返回 `0` 成功，`-1` 出错并设置 `errno`。
+
+- `long strtol(const char *nptr, char **endptr, int base);`
+   - 功能：把字符串 `nptr` 按 `base`（通常为 10）解析为 `long`。`endptr` 指向首个不能转换的字符（可为 `NULL`）。用于把 `getenv` 得到的字符串解析为整数。
+
+注意事项：
+
+- 多线程与环境变量：对环境的修改（`setenv`/`putenv`/`unsetenv`）通常不是线程安全的；读取（`getenv`）在 POSIX 系统上通常是线程安全的，但仍建议在线程间谨慎使用环境修改。
+- 程序应对 `getenv` 返回值做严格校验（空指针、非数字字符等），以免产生解析错误。
+
+该独立小节与 `#### 表达式生成器与验证（从 0 到 1）` 并列，方便开发者既能看到生成器实现细节，也能快速理解 Makefile ↔ 程序的运行时交互契约。
+
 <a id="gen-expr"></a>
 
 #### 表达式生成器与验证（从 0 到 1）
@@ -168,40 +221,40 @@ NEMU (NJU Emulator) 的设计遵循 **"程序 = 状态机"** 的核心思想。�
 $s3 * 455 + $a0 + (957 * (15 + 342 * 382))
 ```
 
-说明中会指出每一步调用的函数、写入到缓冲区的文本，以及 `*pp`（写指针）和 `*rem`（剩余空间）如何变化。
+说明中会指出每一步调用的函数、写入到缓冲区的文本，以及 `s.ptr`（写指针）和 `s.rem`（剩余空间）如何变化（`s` 为 `struct buf_state`）。
 
 1. 初始准备
    - 调用点：`gen_rand_expr()`。
-   - 本地缓冲：`char tmp[4096]; char *p = tmp; int rem = sizeof(tmp);`。
-   - 调用：`gen_expr_rec(&p, &rem, cfg.max_depth)`。此时函数内 `pp` 指向调用者的 `p`，故 `*pp == p == tmp`，`*rem == 4096`。
+   - 本地缓冲：`char tmp[4096];`。
+   - 初始化缓冲状态：`struct buf_state s = {.ptr = tmp, .rem = (int)sizeof(tmp)};` 并调用 `gen_expr_rec(&s, cfg.max_depth)`。
 
 2. 生成第 1 个原子 `$s3`
-   - 入口：`gen_expr_rec` 决定当前层第一个原子使用 `gen_operand(pp, rem, depth)`。
-   - 内部：`gen_operand` 通过 `pool_pick(&op_pool)` 选中 `reg`，调用 `append_reg_from_white(pp, rem)`。
-   - `append_reg_from_white` 随机从 `regs_name[]` 选到 `"s3"`，执行 `append_fmt(pp, rem, "$%s", r)`。
-   - 写入行为：`snprintf(*pp, *rem, "$s3")` 写入 3 字节；随后 `*pp += 3; *rem -= 3`，写指针移到下一个可写位置。
+   - 入口：`gen_expr_rec` 决定当前层第一个原子使用 `gen_operand(s)`。
+   - 内部：`gen_operand` 通过 `pool_pick(&op_pool)` 选中 `reg`，调用 `append_reg_from_white(s)`。
+   - `append_reg_from_white` 随机从 `regs_name[]` 选到 `"s3"`，执行 `append_fmt(s, "$%s", r)`。
+   - 写入行为：`snprintf(s.ptr, s.rem, "$s3")` 写入 3 字节；随后 `s.ptr += 3; s.rem -= 3`，写指针移到下一个可写位置。
 
 3. 写入操作符并生成第 2 个原子 ` * 455`
-   - `gen_expr_rec` 在后续循环中调用 `pool_pick(&al_pool)` 选取操作符 `*`，执行 `append_fmt(pp, rem, " %s ", op)`，写入字符串 `" * "`（含空格）。
-   - 随后调用 `gen_operand` 生成右侧原子：`pool_pick(&op_pool)` 选中 `dec`，执行 `append_fmt(pp, rem, "%d", 455)` 写入 `"455"`。
-   - 每次 `append_*` 写入都会读取 `n = snprintf(...)` 的返回值，若 `n < *rem` 则更新 `*pp += n; *rem -= n`。
+   - `gen_expr_rec` 在后续循环中调用 `pool_pick(&al_pool)` 选取操作符 `*`，执行 `append_fmt(s, " %s ", op)`，写入字符串 `" * "`（含空格）。
+   - 随后调用 `gen_operand` 生成右侧原子：`pool_pick(&op_pool)` 选中 `dec`，执行 `append_fmt(s, "%d", 455)` 写入 `"455"`。
+   - 每次 `append_*` 写入都会读取 `n = snprintf(...)` 的返回值，若 `n < s.rem` 则更新 `s.ptr += n; s.rem -= n`。
 
 4. 写第二个操作符并生成第 3 个原子 ` + $a0`
    - 同上：写入 `" + "`，然后 `gen_operand` 生成寄存器原子并写入 `"$a0"`（通过 `append_reg_from_white`）。
 
 5. 写第三个操作符并决定使用子表达式：` + (`
    - 写入 `" + "` 后，`gen_expr_rec` 在此处对第 4 个原子执行 15% 的“括号子表达式”分支判断。
-   - 假设随机命中：先执行 `append_str(pp, rem, "(")` 写入左括号，然后递归调用 `gen_expr_rec(pp, rem, depth-1)` 以生成括号内的子表达式 `957 * (15 + 342 * 382)`。
+   - 假设随机命中：先执行 `append_str(s, "(")` 写入左括号，然后递归调用 `gen_expr_rec(s, depth-1)` 以生成括号内的子表达式 `957 * (15 + 342 * 382)`。
 
 6. 生成子表达式（深度 = 2）：`957 * (15 + 342 * 382)`
-   - 进入新的 `gen_expr_rec(pp, rem, depth=2)`，假设本层 `atoms = 2`。
+   - 进入新的 `gen_expr_rec(s, depth=2)`，假设本层 `atoms = 2`。
    - 第一个原子：调用 `gen_operand` 写入 `"957"`（`dec`）。
    - 写入操作符 `" * "`。
-   - 第二个原子触发括号分支：写入 `"("` 并递归 `gen_expr_rec(pp, rem, depth=1)` 去生成内层表达式 `15 + 342 * 382`。
+   - 第二个原子触发括号分支：写入 `"("` 并递归 `gen_expr_rec(s, depth=1)` 去生成内层表达式 `15 + 342 * 382`。
 
 7. 内层子表达式（深度 = 1）：`15 + 342 * 382`
-   - 进入 `gen_expr_rec(pp, rem, depth=1)`，假设 `atoms = 3`。
-   - 依次写入原子与操作符：`15`，` + `，`342`，` * `，`382`，每次写入后更新 `*pp` 和 `*rem`。
+   - 进入 `gen_expr_rec(s, depth=1)`，假设 `atoms = 3`。
+   - 依次写入原子与操作符：`15`，` + `，`342`，` * `，`382`，每次写入后更新 `s.ptr` 和 `s.rem`（或在函数内部以 `s->ptr`/`s->rem` 访问）。
    - 内层完成后写入闭括号 `")"`，返回上层；上层再写入自己的闭括号 `")"`，返回顶层。
 
 8. 结束与验证
@@ -209,7 +262,7 @@ $s3 * 455 + $a0 + (957 * (15 + 342 * 382))
    - 若通过验证，则 `snprintf(buf, sizeof(buf), "%s", tmp)` 把结果复制到全局 `buf` 并返回；最终 `main()` 将其写入文件 `input`。
 
 9. 写入安全性要点
-   - 所有写操作都通过 `append_str` / `append_fmt` 完成，这两个函数用 `snprintf`/`vsnprintf` 返回写入长度 `n`，并在成功时做 `*pp += n; *rem -= n`，在截断/越界时把 `*rem = 0` 作为失败标志，阻止后续写入并触发重试。
+   - 所有写操作都通过 `append_str` / `append_fmt` 完成，这两个函数用 `snprintf`/`vsnprintf` 返回写入长度 `n`，并在成功时更新缓冲状态（例如 `s.ptr` / `s.rem` 或 `s->ptr` / `s->rem`），在截断/越界时把 `s.rem`（或 `s->rem`）置为 `0` 作为失败标志，阻止后续写入并触发重试。
 
 该小节旨在把源码函数（`gen_expr_rec`、`gen_operand`、`append_*`）与缓冲区写入时序、递归调用关系一一对应，便于对生成器运行时行为的理解与调试。
 
@@ -219,13 +272,13 @@ $s3 * 455 + $a0 + (957 * (15 + 342 * 382))
 - `weight_item_t` / `weight_pool_t`：表示加权项与权重池，`pool_prepare()` 计算 `total`，`pool_pick()` 基于权重抽样。
 - `regs_name[]`：寄存器白名单，用于随机生成寄存器原子。
 
-缓冲写入约定（不变式）：调用方传入 `char **pp`（写指针）和 `int *rem`（剩余字节），所有字符串写入均通过 `append_str` / `append_fmt` 进行；这两个辅助函数在成功写入时前移指针并减少 `rem`，在溢出或错误时把 `*rem = 0`，作为失败信号向上传播。
+缓冲写入约定（不变式）：调用方以 `struct buf_state *s` 传递缓冲状态（包含写指针 `ptr` 与剩余字节 `rem`），所有字符串写入均通过 `append_str` / `append_fmt` 进行；这两个辅助函数在成功写入时更新 `s->ptr` 与 `s->rem`，在溢出或错误时把 `s->rem = 0`，作为失败信号向上传播。
 
 ##### 辅助函数（职责与实现要点）
 
-- `append_str(char **pp, int *rem, const char *s)`：使用 `snprintf` 写入常数字符串并更新 `pp/rem`；写入会导致截断时把 `*rem=0`。
-- `append_fmt(char **pp, int *rem, const char *fmt, ...)`：基于 `vsnprintf` 的格式化写入封装；同样通过 `*rem` 传播失败。
-- `append_reg_from_white(char **pp, int *rem)`：从 `regs_name` 随机选取寄存器名并以 `$name` 格式写入；实现中对输入数组中可能含 `$` 前缀做了统一处理以保证输出格式一致。
+- `append_str(struct buf_state *s, const char *c)`：使用 `snprintf` 写入常数字符串并更新 `s->ptr` / `s->rem`；写入在截断时把 `s->rem = 0`。
+- `append_fmt(struct buf_state *s, const char *fmt, ...)`：基于 `vsnprintf` 的格式化写入封装；同样通过 `s->rem` 传播失败。
+- `append_reg_from_white(struct buf_state *s)`：从 `regs_name` 随机选取寄存器名并以 `$name` 格式写入；实现中对输入数组中可能含 `$` 前缀做了统一处理以保证输出格式一致。
 
 这些函数把缓冲边界管理集中，简化了递归生成函数的错误处理逻辑。
 
@@ -235,26 +288,24 @@ $s3 * 455 + $a0 + (957 * (15 + 342 * 382))
 
 2. `pool_pick(weight_pool_t *p)`：基于 `p->total` 做线性加权抽样，返回选中项下标。
 
-3. `gen_operand(char **pp, int *rem, int depth)`：生成单个原子（operand）。
+3. `gen_operand(buffer_t *buf, int depth)`：生成单个原子（operand）。
    - 从 `op_pool` 抽样得到 `dec` / `hex` / `reg`；
    - `dec`：写入十进制常数；`hex`：写入 `0x` 十六进制常数；`reg`：调用 `append_reg_from_white` 输出 `$name`。
 
-4. `gen_expr_rec(char **pp, int *rem, int depth)`：递归构造表达式片段（核心构造器）。
+4. `gen_expr_rec(buffer_t *buf, int depth)`：递归构造表达式片段（核心构造器）。
    - 决定当前层 `atoms = 1 + rand() % cfg.max_atoms`；
    - 为第一个原子 15% 概率生成带括号的子表达式（写 `(`、递归、写 `)`），否则调用 `gen_operand`；
    - 对后续每个原子：选运算符（`al_pool`），写入 ` " %s "`，根据概率或运算符类型决定生成括号子表达式或调用 `gen_operand`；
-   - 所有写入前后检查 `*rem`，若 `*rem == 0` 直接返回，交由上层重试逻辑处理。
+   - 所有写入前后检查 `buf->rem`，若 `buf->rem == 0` 直接返回，交由上层重试逻辑处理。
 
 5. `gen_rand_expr()`：顶层生成与验证。
    - 在局部 `tmp[4096]` 上尝试若干次（当前实现 5 次）：
-     - 初始化 `p = tmp; rem = sizeof(tmp)` 并调用 `gen_expr_rec(&p, &rem, cfg.max_depth)`；
+   - 初始化缓冲状态：`struct buf_state s = {.ptr = tmp, .rem = (int)sizeof(tmp)}` 并调用 `gen_expr_rec(&s, cfg.max_depth)`；
      - 若 `rem <= 0 || tmp[0] == '\0'`，视为失败并重试；
      - 对 `tmp` 做简单语法校验（括号平衡）：遍历字符计数 `(` / `)`，遇不匹配则重试；
      - 成功则 `snprintf(buf, sizeof(buf), "%s", tmp)` 把结果复制到全局 `buf` 并返回；
    - 若所有尝试均失败，写入保底表达式 `"1+1"`。
 
-6. `sanitize_for_c(const char *src, char *dst, int dstsz)`（可选）:
-   - 将表达式中的 `$name` 替换为安全的字面量（例如 `1`），用于把表达式嵌入 C 源以做编译或语义检查。
 
 ##### 从 `main()` 出发的顺序逻辑（调用链与职责划分）
 
@@ -262,7 +313,7 @@ $s3 * 455 + $a0 + (957 * (15 + 342 * 382))
    - `srand(time(0))` 设置随机种子（可改为接受外部种子以便复现）；
    - 调用 `pool_prepare(&op_pool)` 與 `pool_prepare(&al_pool)` 计算权重和。
 
-2. 解析参数并打开输出文件：读取生成行数 `loop`（默认 1），并打开 `input` 用以写入。
+2. 解析参数并打开输出文件：从环境变量 `GEN_N`（通过 `getenv`）读取生成条数，使用 `strtol` 解析为正整数，若解析失败或未设置则默认 `gen_n = 1`；随后打开 `input` 用以写入。
 
 3. 逐行生成与写入：循环 `i = 0 .. loop-1`：
    - 调用 `gen_rand_expr()`（返回结果保存在全局 `buf`）；
@@ -280,28 +331,121 @@ $s3 * 455 + $a0 + (957 * (15 + 342 * 382))
 
 
 ### C. 监视点 (`watchpoint.c`)
+**监视点（Watchpoint）实现笔记**
 
-**实现过程设计思路：**
+本文档目标：以可实现、可测试的方式概述 `watchpoint.c` 的设计与实现要点，包含数据结构、核心接口、执行流程、错误处理与与 CPU/表达式求值模块的集成点。
 
-1. **监视点池管理**
-   - 预分配一组监视点结构体（如数组），通过链表维护空闲和已用监视点。
-   - 提供 `new_wp(expr)` 分配新监视点，保存表达式字符串和当前值。
-   - 提供 `free_wp(wp)` 释放监视点，回收到空闲链表。
+概览：
+- 监视点以固定大小池（`wp_pool[NR_WP]`）预分配，使用两个链表管理：`free_list`（空闲）与 `used_list`（已启用）。
+- 每个监视点保存：编号 `NO`、表达式字符串 `expr[]`、上次计算值 `prev_value`、链表指针 `next` 等。
 
-2. **监视点添加与删除**
-   - `w expr` 命令解析表达式，调用 `new_wp(expr)` 创建监视点，并初始化当前值。
-   - `d N` 命令根据编号查找监视点，调用 `free_wp(wp)` 删除。
+1) 数据结构（建议）
 
-3. **监视点检测机制**
-   - 在 `cpu_exec` 每次指令执行后，遍历所有已用监视点。
-   - 对每个监视点，调用表达式求值模块，获取新值。
-   - 若新值与旧值不同，则输出变化信息，暂停 CPU 执行。
+```c
+// watchpoint.h (示例)
+#define NR_WP 32
+typedef struct WP {
+   int NO;
+   char expr[128];
+   word_t prev_value; // 与 cpu 相关的 word_t（uint32/64）
+   struct WP *next;
+} WP;
 
-4. **信息展示接口**
-   - `info w` 命令遍历所有已用监视点，输出编号、表达式和当前值。
+typedef struct { WP *head, *tail; int size; } wp_list_t;
 
-5. **与表达式求值模块结合**
-   - 监视点的表达式求值依赖 `expr.c`，每次检测都调用表达式求值接口。
+extern WP wp_pool[NR_WP];
+extern wp_list_t free_list, used_list;
+```
+
+2) 核心接口（必实现函数）
+
+- `void init_wp_pool(void);`
+   - 初始化 `wp_pool`，把所有节点加入 `free_list`，清空 `used_list`。
+
+- `WP* new_wp(const char *expr, bool *success);`
+   - 从 `free_list` 取节点；复制 `expr`（截断保护）；调用 `expr(expr, &ok)` 计算当前值；若 `ok==false` 或池空则回滚并返回 `NULL`（或通过 `success` 报错）；否则将节点加入 `used_list` 并返回指针。
+
+- `void free_wp(int no);`
+   - 在 `used_list` 中按 `NO` 查找并移除，清理后追加回 `free_list`。
+
+- `bool check_watchpoints(void);`
+   - 遍历 `used_list`，对每个 `wp` 调用 `expr(wp->expr, &ok)` 得到 `val`；若 `ok==false` 则记录/跳过该监视点（或按策略决定）；若 `val != wp->prev_value` 则打印变更信息并更新 `prev_value`，函数返回 `true`（表示触发，需要暂停 CPU）。否则返回 `false`。
+
+- `void info_wp(void);`
+   - 列出 `used_list` 中所有监视点 `NO`、`expr`、`prev_value`，供 `info w` 命令使用。
+
+3) 创建监视点的详细流程（`new_wp`）
+
+- 检查 `free_list.head` 是否等于NULL，若无空闲节点返回错误给用户。
+- 取第一个空闲节点 `p = free_list.head`，调整 `free_list.head`/`tail`/`size`。
+- 使用 `strncpy(p->expr, expr, sizeof p->expr - 1)` 并确保以 `\0` 终止。
+- 调用 `expr(p->expr, &ok)`：
+   - 若 `ok == false`：将 `p` 放回 `free_list`（恢复），并把 `*success = false` 返回；
+   - 否则 `p->prev_value = val`，把 `p` 插入到 `used_list`（维护 head/tail/size），设置 `*success = true` 并返回 `p`。
+
+4) 删除监视点（`free_wp` / `free_wp(int no)`）
+
+- 在线性遍历 `used_list` 查找 `NO == no`（记录前驱节点以便移除）。
+- 移除时注意处理删除头节点、尾节点以及唯一节点的边界情况。
+- 释放后把节点追加到 `free_list`（清空 `expr` 与 `prev_value` 可选）。
+
+5) 检测流程与集成点（`check_watchpoints`）
+
+- 集成点：建议在 `cpu_exec` 的主循环中每条指令后或每 N 条指令后调用 `check_watchpoints()`；当其返回 `true` 时暂停执行、切换回 SDB 主循环。
+- 检测实现注意：表达式求值函数 `expr()` 的语义是无副作用的（仅读取 CPU 状态/内存），并以 `bool success` 报告计算是否成功。
+- 实现细节：
+   - 对每个 `wp`：调用 `val = expr(wp->expr, &ok)`；若 `ok==false` 则打印 `Bad expression` 或在调试输出中标记该 watchpoint（按策略）；
+   - 若 `val != wp->prev_value`：打印触发信息，例如：
+
+```
+Watchpoint %d triggered: %s
+   old value = 0x%lx
+   new value = 0x%lx
+```
+
+   - 更新 `wp->prev_value = val`；记录至少一个触发则返回 `true`。
+
+6) 错误处理与边界条件
+
+- 池耗尽：用户应收到清晰错误信息（例如："No free watchpoint"）。
+- 表达式求值失败：创建时拒绝并告知用户；检测时打印警告并跳过该监视点的触发判断（或按配置决定是否删除）。
+- 链表维护：在增删时须同时更新 `head`/`tail`/`size`，避免悬挂指针。
+
+7) 性能与策略建议
+
+- 频率控制：若每次指令后都评估所有监视点会较慢，可提供按需检查（如仅在单步模式、断点附近或每 N 条指令检查）。
+- 表达式缓存：对于复杂表达式可考虑缓存解析结果（token 列表）以减少重复词法分析费用，但需权衡内存与实现复杂度。
+
+8) 与 SDB 命令的映射示例
+
+- `w <expr>`：调用 `new_wp(expr, &success)` 并在成功时打印分配的 `NO`。
+- `d <no>`：调用 `free_wp(no)`，并打印结果。
+- `info w`：调用 `info_wp()` 列出当前监视点。
+
+9) 简单示例（伪代码）
+
+```c
+WP *new_wp(const char *expr, bool *success) {
+   if (free_list.size == 0) { *success = false; return NULL; }
+   WP *p = pop_free();
+   strncpy(p->expr, expr, sizeof p->expr - 1);
+   p->expr[sizeof p->expr - 1] = '\0';
+   bool ok = true;
+   word_t v = expr_eval(p->expr, &ok);
+   if (!ok) { push_free(p); *success = false; return NULL; }
+   p->prev_value = v;
+   push_used(p);
+   *success = true;
+   return p;
+}
+```
+
+10) 测试建议
+
+- 单元测试：模拟 `expr()` 返回已知值的场景，测试 `new_wp`/`free_wp`/`check_watchpoints` 的链表维护与边界条件。
+- 集成测试：在解释器中设置一个监视点，运行若干条指令，验证当寄存器/内存变化时能触发并暂停。
+
+小结：按照上文接口与流程实现 `watchpoint.c` 中的增删查改与定期检测，并在 `cpu_exec` 合适位置调用 `check_watchpoints()`，即可得到一个稳健且易于调试的监视点功能。
 
 
 ---

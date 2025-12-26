@@ -19,12 +19,13 @@
 #include <isa.h>
 #include <regex.h>
 #include <stdbool.h>
-
-
-
+#include <memory/vaddr.h> 
+#include <common.h>
+#include <cpu/cpu.h>
 //========================= Token 类型 ====================================//
 enum {
-  TK_NOTYPE = 256, TK_EQ,TK_16NUM,TK_NUM,TK_REG
+  TK_NOTYPE = 256, TK_EQ,TK_16NUM,TK_NUM,TK_REG,
+  TK_NOTEQ,TK_AND, TK_OR,TK_DEREF
 
   /* TODO: Add more token types */
 
@@ -39,17 +40,20 @@ static struct rule {
   {"==",TK_EQ},                           // 等于       257
   {"0[xX][0-9a-fA-F]+",TK_16NUM},         // 16进制     258
   {"[0-9]+", TK_NUM},                     // 十进制整数  259
-  {"\\$([A-Za-z][A-Za-z0-9]*|[0-9]+)", TK_REG},
-  {"\\+", '+'},                           // 加号       43
-  {"-", '-'},                             // 减号       45
-  {"\\*", '*'},                           // 乘号       42
-  {"/", '/'},                             // 除号       47
-  {"\\(", '('},                           // 左括号     40
-  {"\\)", ')'}                            // 右括号     41
+  {"\\$([A-Za-z][A-Za-z0-9]*|[0-9]+)", TK_REG},        // 寄存器     260
+  {"!=", TK_NOTEQ},                       // 不等于     261 
+  {"&&",TK_AND},                          // 逻辑与     264 
+  {"\\|\\|",TK_OR},                       // 逻辑或     265 
+  {"\\+", '+'},                            // 加号       43
+  {"-", '-'},                              // 减号       45
+  {"\\*", '*'},                            // 乘号       42
+  {"/", '/'},                              // 除号       47
+  {"\\(", '('},                            // 左括号     40
+  {"\\)", ')'}                             // 右括号     41
 
 };
 #define NR_REGEX ARRLEN(rules)    // 自动计算rules结构体数组元素个数
-
+// ==================================自动解析字符串数值================================//
 static word_t parse_num(const char *s, bool *success){
   char *endptr = NULL;
   word_t val = strtoull(s,&endptr,0);
@@ -60,6 +64,17 @@ static word_t parse_num(const char *s, bool *success){
   } 
   return val;
 }
+// ===================================指针对地址解引用=================================//
+// static word_t get_pointer_value(const char *s, bool *success){
+//   word_t data;
+//   word_t addr = parse_num(s,success);
+//   if (addr < 0x80000000 || addr >=0xffffffff){
+//     printf("输入解析地址不在地址范围内！请检查输入");
+//     *success = false;
+//     return 0;
+//   }
+//   return data = vaddr_read(addr,sizeof(int));
+// }
 
 //============== 编译 rules[] Tokens 与正则表达式一一对应 ==============================//
 static regex_t re[NR_REGEX] = {}; // re[] 是一个regex_t 结构体数组，每个 regex_t 结构体代表一个已编译的正则表达式。
@@ -119,6 +134,7 @@ static bool make_token(char *e) {
             tokens[nr_token].type = rules[i].token_type;
             int copy_len = substr_len < (int)sizeof(tokens[nr_token].str) - 1 ? substr_len : (int)sizeof(tokens[nr_token].str) - 1;
             strncpy(tokens[nr_token].str, substr_start, copy_len);
+            
             tokens[nr_token].str[copy_len] = '\0';
             nr_token++;
             break;
@@ -126,13 +142,28 @@ static bool make_token(char *e) {
         break;
       }
     }
-
     if (i == NR_REGEX) {
       printf("no match at position %d\n%s\n%*.s^\n", position, e, position, "");
       return false;
     }
   }
-
+  for ( i = 0; i < nr_token; i++){
+ // 如果 * 出现在表达式开头，或出现在另一个运算符之后，或出现在左括号 ( 之后，则它是 unary deref（TK_DEREF）。
+    if (tokens[i].type == '*'){
+      if (i ==0                       ||
+        tokens[i-1].type == '+'       ||
+        tokens[i-1].type == '-'       ||
+        tokens[i-1].type == '*'       ||
+        tokens[i-1].type == '/'       ||
+        tokens[i-1].type == TK_EQ     ||
+        tokens[i-1].type == TK_NOTEQ  ||
+        tokens[i-1].type == TK_AND    ||
+        tokens[i-1].type == TK_OR     ||
+        tokens[i-1].type == '('       ){
+          tokens[i].type = TK_DEREF;    
+      }
+    }
+  }
   return true;
 }
 
@@ -156,18 +187,27 @@ int check_parentheses(int l, int r) {
 }
 // 利用运算法规则寻找主运算法即是最低等级运算符位置
 int get_priortiy(int type){
+  /* 新约定：返回值越小表示优先级越高（binding 越强），越大表示优先级越低（更容易成为主运算符）。
+     映射基于常见 C 运算符优先级（此处列出当前实现需要的运算符等级）。
+     小数值 = 高优先级（先计算）；大数值 = 低优先级（更可能被选为主运算符）。
+  */
   switch (type){
-    case TK_EQ : return 0;
-    case   '+' : return 1;
-    case   '-' : return 1;
-    case   '*' : return 2;
-    case   '/' : return 2;
-    default    : return 20;   // 非运算符
+    case TK_DEREF : return 1;   /* 一元解引用/一元运算：最高优先级（最强绑定） */
+    case   '*'    : return 4;
+    case   '/'    : return 4;
+    case   '+'    : return 5;
+    case   '-'    : return 5;
+    case TK_EQ    : return 8;
+    case TK_NOTEQ : return 9;
+    case TK_AND   : return 12;   /* 逻辑与 */
+    case TK_OR    : return 13;   /* 逻辑或，最低优先级（最弱绑定） */
+    default       : return -1;  /* 非运算符，返回 -1 表示不是运算符，find_main_operator 会忽略 */
   }
 }
+
 int find_main_operator(int l, int r,bool *success){
   int paren_level = 0;
-  int min_priority = 20;
+  int max_priority = -1;
   int op = -1;
   for ( int i = l; i <= r; i++){
     if (tokens[i].type == '('){
@@ -175,16 +215,18 @@ int find_main_operator(int l, int r,bool *success){
     } else if (tokens[i].type == ')'){
       paren_level--;
     } else if (paren_level == 0){
-  // 逐个扫描获取非括号内的运算符等级
+      /* 逐个扫描获取非括号内的运算符等级。
+         新逻辑：选取区间内优先级数值最大的运算符作为主运算符（数值越大＝优先级越低＝成为主运算符的可能性越大）。*/
       int pri = get_priortiy(tokens[i].type);
-  // 设计逻辑：逐个比较等级：等级低的覆盖等级大的，同一等级的，位于表达式更后面的覆盖前面的作为主运算符
-      if (pri < min_priority || (pri == min_priority && i > op)){
-        min_priority = pri;
+      /* 设计逻辑：当 pri > max_priority 时更新；若 pri==max_priority，保留右侧靠后的运算符（i>op），
+         以保持左结合的默认行为（与之前实现一致）。 */
+      if (pri > max_priority || (pri == max_priority && i > op)) {
+        max_priority = pri;
         op = i;
       }
     }
   }
-  // op 未变 找不到主运算符则算法表达式错误，传出success = false  
+  /* op 未变 找不到主運算符则算法表达式错误，传出success = false  */
   if (op == -1) {
     *success = false;
     printf("No main operator found\n");
@@ -204,7 +246,7 @@ word_t eval(int l,int r,bool *success,bool *hex){
     switch (tokens[l].type){
       case TK_16NUM : return parse_num(tokens[l].str,success);
       case TK_NUM   : return parse_num(tokens[l].str,success);
-      case TK_REG   : * hex = true ;return isa_reg_str2val(tokens[l].str,success); 
+      case TK_REG   : *hex = true ;return isa_reg_str2val(tokens[l].str,success); 
       default: 
       *success = false; return 0;
     }
@@ -214,6 +256,10 @@ word_t eval(int l,int r,bool *success,bool *hex){
   } else {        
     // 表达式非整体被括号，进入找主运算符拆分两个表达式重复递归                                                                          
       int op = find_main_operator(l,r,success);
+      if (tokens[op].type == TK_DEREF){
+        word_t addr = eval(l+1,r,success,hex);
+        return vaddr_read(addr,sizeof(int));
+      } else {
       // 利用*success 检查主运算符
       if (*success == false) return 0;
       val1 = eval(l,op-1,success,hex);
@@ -222,6 +268,10 @@ word_t eval(int l,int r,bool *success,bool *hex){
         case '+': return val1 + val2;
         case '-': return val1 - val2;
         case '*': return val1 * val2;
+        case TK_EQ    : return (word_t) (val1 == val2 ? 1 : 0); 
+        case TK_NOTEQ : return (word_t) (val1 != val2 ? 1 : 0); 
+        case TK_AND   : return (word_t) (val1 && val2 );
+        case TK_OR    : return (word_t) (val1 || val2 );
         case '/':
           if (val2 == 0) {
             printf("division by zero\n");
@@ -229,12 +279,12 @@ word_t eval(int l,int r,bool *success,bool *hex){
             return 0;
           }
           return val1 / val2;
-        case TK_EQ: return val1 == val2;
         // 其它类型如 TK_NUM、TK_REG、括号等在递归出口已处理
         default: assert(0); // 未知类型直接报错
+      }
+     }
     }
   }
-}
 
 word_t expr(char *e, bool *success, bool *hex) {
   if (!make_token(e)) {
@@ -252,4 +302,37 @@ word_t expr(char *e, bool *success, bool *hex) {
   // 进入表达式求值递归求值处理之前，先将success设置为ture,eval求值过程中如果有错误提前返回false 结束当前求值
   return eval(0,nr_token-1,success,hex);
   }
+}
+
+
+int eval_input_file(const char *path) {
+  if (!path) return -1;
+  FILE *f = fopen(path, "r");
+  if (!f) {
+    return -1; // 打不开文件，caller 可决定是否报错
+  }
+
+  char line[4096];
+  while (fgets(line, sizeof(line), f)) {
+    /* strip newline & leading/trailing whitespace */
+    char *p = line;
+    while (*p && (*p == ' ' || *p == '\t')) p++; /* skip leading ws */
+    char *end = p + strlen(p);
+    while (end > p && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t')) end--;
+    *end = '\0';
+    if (*p == '\0') continue;
+
+    bool success = false;
+    bool ishex = false;
+    printf("\ncurrent expr: %s\n", p);
+    word_t val = expr(p, &success, &ishex);
+    if (success) {
+      if (ishex) printf("value: 0x%08" PRIx32 "\n", (uint32_t)val);
+      else printf("value: %u\n", (unsigned)val);
+    } else {
+      printf("Bad expression: %s\n", p);
+    }
+  }
+  fclose(f);
+  return 0 ;
 }

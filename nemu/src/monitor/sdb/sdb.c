@@ -38,8 +38,19 @@ static int cmd_si(char *args);
 static int cmd_info(char *args);
 static int cmd_x(char *args);
 static int cmd_p(char *args);
+static int cmd_w(char *args);
+static int cmd_d(char *args);
 
-//================================ Command table ================================//
+// ======================= SDB 简易调试器表达式求值与监视点初始化==============================// 
+void init_sdb() {
+  /* Compile the regular expressions. */
+  init_regex();
+
+  /* Initialize the watchpoint pool. */
+  init_wp_pool();
+}
+
+//================================== Command table ====================================//
 static struct {
   const char *name;
   const char *description;
@@ -51,7 +62,9 @@ static struct {
   {"si", "Step execute",cmd_si},
   {"info","Generic program status (r: register, w: watchpoint)", cmd_info },
   {"x","read memery from addr (x n 0x80000000)",cmd_x},
-  {"p","parse expression",cmd_p}
+  {"p","parse expression",cmd_p},
+  {"w","watchpoint add (w <expr>)",cmd_w},
+  {"d","watchpoint delete (d < no>)",cmd_d}
   /* TODO: Add more commands */
 
 };
@@ -106,7 +119,6 @@ static int cmd_c(char *args) {
 
   // cmd_q 退出程序的命令处理函数
 static int cmd_q(char *args) {
-
   nemu_state.state = NEMU_QUIT;
   return -1;
 }
@@ -138,8 +150,7 @@ static int cmd_info(char *args){
   if (strcmp(arg,"r") == 0){
     isa_reg_display();
   } else if (strcmp(arg,"w") == 0){
-
-    printf("Watchpoint info is not implemented yet.\n");
+    watchpoint_list(&used_list);
   } else{
     printf("Unknown argument '%s'. Usage: info [r|w]\n", args);
     return 0;
@@ -194,7 +205,6 @@ static int cmd_info(char *args){
     bool success = false;
     bool hex = false;
     word_t result = expr(args,&success,&hex);
-
     if (success){
       if (hex == true){
         printf("0x%08" PRIx32 "\n", result);
@@ -206,6 +216,37 @@ static int cmd_info(char *args){
     }
     return 0;
   }
+
+//============================= watchpoint add expr  =================================//
+static int cmd_w(char *args){
+
+  if (args == NULL){
+    printf("Usage: w <expr>\n");
+    return 0;
+  }
+  new_wp(args);
+  watchpoint_list(&used_list);
+  return 0;
+}
+
+// //============================= watchpoint delete expr  =================================//
+static int cmd_d(char *args){
+  if (args == NULL){
+    printf("Usage: d <no>\n");
+    return 0;
+  }
+  char *endptr;
+  int no = (int)strtoul(args,&endptr,10);
+  if (endptr == args || *endptr !='\0'){
+    printf("Invalid number of instructions: %s\n", args);
+    return 0;
+  }
+  unlink_wp(&used_list,no);
+  watchpoint_list(&used_list);
+  return 0;
+}
+
+
 
 //============================= SDB main loop ========================================//
 void sdb_set_batch_mode() {
@@ -246,12 +287,4 @@ void sdb_mainloop() {
 
     if (i == NR_CMD) { printf("Unknown command '%s'\n", cmd); }
   }
-}
-// ======================= SDB 简易调试器表达式求值与监视点初始化==============================// 
-void init_sdb() {
-  /* Compile the regular expressions. */
-  init_regex();
-
-  /* Initialize the watchpoint pool. */
-  init_wp_pool();
 }
