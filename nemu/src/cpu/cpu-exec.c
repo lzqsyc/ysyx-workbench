@@ -75,15 +75,16 @@ static void exec_once(Decode *s, vaddr_t pc) {
 static void execute(uint64_t n) {
   Decode s;
   for (int i =0; i<n ; i++) {
-    exec_once(&s, cpu.pc);
-    g_nr_guest_inst ++;
-    trace_and_difftest(&s, cpu.pc);
-
-    // check_watchpoint 插入 ；检测到值变更新，并且打印所有值变表达式，同时改变nemu_state.state
+    // 进入循环就开始检查，因为pc的变化是从进入exec_once进入取值之后就反馈pc= pc+4;
+    // 即是进入第二次循环pc值已经改变了，所以循环初进行值变检测。在执行下一isa前设定nemu_state.state
     if (check_watchpoint(&used_list) > 0){
       nemu_state.state = NEMU_STOP;
     }
+    exec_once(&s, cpu.pc);
+    g_nr_guest_inst ++;
+    trace_and_difftest(&s, cpu.pc);
     if (nemu_state.state != NEMU_RUNNING) break;
+
     IFDEF(CONFIG_DEVICE, device_update());
   }
 }
