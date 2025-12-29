@@ -25,7 +25,7 @@
 //========================= Token 类型 ====================================//
 enum {
   TK_NOTYPE = 256, TK_EQ,TK_16NUM,TK_NUM,TK_REG,
-  TK_NOTEQ,TK_AND, TK_OR,TK_DEREF
+  TK_NOTEQ,TK_AND, TK_OR,TK_VAR,TK_DEREF
 
   /* TODO: Add more token types */
 
@@ -44,6 +44,7 @@ static struct rule {
   {"!=", TK_NOTEQ},                       // 不等于     261 
   {"&&",TK_AND},                          // 逻辑与     264 
   {"\\|\\|",TK_OR},                       // 逻辑或     265 
+  {"[a-zA-Z_][a-zA-Z0-9_]*",TK_VAR},      // 变量名     266
   {"\\+", '+'},                            // 加号       43
   {"-", '-'},                              // 减号       45
   {"\\*", '*'},                            // 乘号       42
@@ -201,7 +202,7 @@ int get_priortiy(int type){
     case TK_NOTEQ : return 9;
     case TK_AND   : return 12;   /* 逻辑与 */
     case TK_OR    : return 13;   /* 逻辑或，最低优先级（最弱绑定） */
-    default       : return -1;  /* 非运算符，返回 -1 表示不是运算符，find_main_operator 会忽略 */
+    default       : return -1;   /* 非运算符，返回 -1 表示不是运算符，find_main_operator 会忽略 */
   }
 }
 

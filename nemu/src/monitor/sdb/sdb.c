@@ -199,8 +199,14 @@ static int cmd_info(char *args){
     //======================== 表达式求值 cmd_p p $t1===================================//
   static int cmd_p(char *args){
     if (args == NULL){
-      printf("Usage: p expr\n");
+      printf("Usage: p <expr>  OR  p <filename>\n");
       return 0;
+    }
+    // 表达式尾文件地址，即处理表达式文件
+    FILE* f = fopen(args,"r");
+    if (f !=NULL){
+      fclose(f);
+      eval_input_file(args);
     }
     bool success = false;
     bool hex = false;
