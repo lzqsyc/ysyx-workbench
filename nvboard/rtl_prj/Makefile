@@ -41,6 +41,7 @@ CSRC_FILE   := $(wildcard $(CSRC_DIR)/$(MODE)_*.cpp)
 
 # 绑定约束文件
 NXDC_FILES  := $(PROJ_DIR)/constr/$(TOP_MODULE).nxdc
+SDC_FILES   := $(PROJ_DIR)/constr/$(TOP_MODULE).sdc
 SRC_AUTO_BIND := $(OBJ_DIR)/auto_bind.cpp
 
 # 目标文件
@@ -103,6 +104,15 @@ $(YOSYS_REPORT): $(VSRC_FILE) | $(OBJ_DIR)
 				stat -width;\
 				check" > $@
 	@echo "yosys 综合报名已生成：$@"
+
+# yosys 时序报告
+yosys-sta: $(VSRC_FILE) | $(OBJ_DIR)
+	@echo "yosys 时序报告..."
+	make -C /home/l/yosys-sta sta \
+		DESIGN=$(TOP_MODULE) SDC_FILE=$(abspath $(SDC_FILES)) \
+		RTL_FILES="$(abspath $(VSRC_FILE))"
+	@echo "yosys 综合报名已生成：$@"
+
 # yosys 综合网表
 $(YOSYS_NETLIST): $(VSRC_FILE) | $(OBJ_DIR)
 	@echo "yosys 综合网表..."

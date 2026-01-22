@@ -1,0 +1,36 @@
+digraph "vga_top" {
+label="vga_top";
+rankdir="LR";
+remincross=true;
+n1 [ shape=octagon, label="clk", color="black", fontcolor="black"];
+n2 [ shape=octagon, label="hsync", color="black", fontcolor="black"];
+n3 [ shape=diamond, label="pix_data", color="black", fontcolor="black"];
+n4 [ shape=diamond, label="pix_x", color="black", fontcolor="black"];
+n5 [ shape=diamond, label="pix_y", color="black", fontcolor="black"];
+n6 [ shape=octagon, label="rgb", color="black", fontcolor="black"];
+n7 [ shape=diamond, label="rst_n", color="black", fontcolor="black"];
+n8 [ shape=octagon, label="sys_rst_n", color="black", fontcolor="black"];
+n9 [ shape=diamond, label="vga_clk", color="black", fontcolor="black"];
+n10 [ shape=octagon, label="vsync", color="black", fontcolor="black"];
+c11 [ shape=record, label="{{<p3> pix_data|<p7> rst_n|<p9> vga_clk}|u_vga_ctrl\nvga_ctrl|{<p2> hsync|<p4> pix_x|<p5> pix_y|<p6> rgb|<p10> vsync}}",  ];
+c12 [ shape=record, label="{{<p4> pix_x|<p5> pix_y|<p7> rst_n|<p9> vga_clk}|u_vga_pic\nvga_pic|{<p3> pix_data}}",  ];
+x0 [shape=point, ];
+x1 [shape=point, ];
+n1:e -> c11:p9:w [color="black", fontcolor="black", label=""];
+n1:e -> c12:p9:w [color="black", fontcolor="black", label=""];
+n1:e -> x1:w [color="black", fontcolor="black", label=""];
+c11:p10:e -> n10:w [color="black", fontcolor="black", label=""];
+c11:p2:e -> n2:w [color="black", fontcolor="black", label=""];
+c12:p3:e -> n3:w [color="black", fontcolor="black", style="setlinewidth(3)", label=""];
+n3:e -> c11:p3:w [color="black", fontcolor="black", style="setlinewidth(3)", label=""];
+c11:p4:e -> n4:w [color="black", fontcolor="black", style="setlinewidth(3)", label=""];
+n4:e -> c12:p4:w [color="black", fontcolor="black", style="setlinewidth(3)", label=""];
+c11:p5:e -> n5:w [color="black", fontcolor="black", style="setlinewidth(3)", label=""];
+n5:e -> c12:p5:w [color="black", fontcolor="black", style="setlinewidth(3)", label=""];
+c11:p6:e -> n6:w [color="black", fontcolor="black", style="setlinewidth(3)", label=""];
+x0:e -> n7:w [color="black", fontcolor="black", label=""];
+n8:e -> c11:p7:w [color="black", fontcolor="black", label=""];
+n8:e -> c12:p7:w [color="black", fontcolor="black", label=""];
+n8:e -> x0:w [color="black", fontcolor="black", label=""];
+x1:e -> n9:w [color="black", fontcolor="black", label=""];
+}
