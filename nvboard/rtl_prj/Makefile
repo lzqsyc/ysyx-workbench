@@ -22,9 +22,9 @@
 # Verilator 在 --build 阶段会把这些转为实际的编译/链接命令
 # ===============================================
 
-PROJ        ?= prj_2         
+PROJ        ?= prj_2
 TOP_MODULE  ?= test
-MODE		?= nv                  
+MODE		?= nv
 
 # ================= 目录布局 =================#
 PROJ_DIR    := $(PROJ)
@@ -132,7 +132,7 @@ $(YOSYS_SCHEMATIC): $(VSRC_FILE) | $(YOSYS_DIR)
 					read_verilog $(VSRC_FILE);\
 					synth;\
 					show -format svg -prefix $(OBJ_DIR)/$$MODULE $$MODULE" 2>/dev/null && \
-					echo "成功" || "失败";\
+					echo "成功" || echo "失败";\
 	done
 	@echo "电路图生成完成"
 
