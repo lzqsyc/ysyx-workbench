@@ -22,15 +22,15 @@
 #include <stdbool.h>
 #include <memory/vaddr.h> 
 #include <cpu/cpu.h>
+
 //========================= Token 类型 ====================================//
 enum {
   TK_NOTYPE = 256, TK_EQ,TK_16NUM,TK_NUM,TK_REG,
-  TK_NOTEQ,TK_AND, TK_OR,TK_VAR,TK_DEREF
+  TK_NOTEQ,TK_AND, TK_OR,TK_VAR,TK_DEREF,TK_NEG,TK_PLUS
 
   /* TODO: Add more token types */
 
 };
-
 //===========Token 结构体数组定义 正则规则（每个数组元素由结构体成员构成） ==================//
 static struct rule {
   const char *regex;
@@ -45,13 +45,14 @@ static struct rule {
   {"&&",TK_AND},                          // 逻辑与     264 
   {"\\|\\|",TK_OR},                       // 逻辑或     265 
   {"[a-zA-Z_][a-zA-Z0-9_]*",TK_VAR},      // 变量名     266
+  {"\\<",'<'},                            // 小于       60
+  {"\\>",'>'},                            // 大于       62
   {"\\+", '+'},                            // 加号       43
   {"-", '-'},                              // 减号       45
   {"\\*", '*'},                            // 乘号       42
   {"/", '/'},                              // 除号       47
   {"\\(", '('},                            // 左括号     40
-  {"\\)", ')'}                             // 右括号     41
-
+  {"\\)", ')'}                            // 右括号     41
 };
 #define NR_REGEX ARRLEN(rules)    // 自动计算rules结构体数组元素个数
 // ==================================自动解析字符串数值================================//
@@ -109,19 +110,18 @@ static bool make_token(char *e) {
   int position = 0;
   int i;
   regmatch_t pmatch;      // regmatch_t 结构体用于存放正则表达式匹配结果的位置，so: 目标字符串中的起始位置，eo:目标字符串的结束位置
-  nr_token = 0;           // 用于记录有效token_type
+  nr_token = 0;           
   // e[position] 实际上等价于 *(e + position)，即“从 e 指向的起始地址偏移 position 个字节后的内容”。
   while (e[position] != '\0') {
-    /* Try all rules one by one. */
     for (i = 0; i < NR_REGEX; i ++) {
-      // 对于 pmatch 而言：目标字符串为：e+position，利用position，substr_len，rm_eo 来记录每一个正确匹配的token的长度
-// 用 rules[] 结构体数组里定义的每个正则表达式规则，依次去匹配输入字符串的当前位置，只要某个规则能从当前位置开始匹配成功，就把它当作一个 token
+  // re[i]编译好的正则规则对象，与传入指针e指向的命令行内容逐个字符串叠加匹配正则对象，构成一个表达式tokens,并放入结构体数组pmatch
       if (regexec(&re[i], e + position, 1, &pmatch, 0) == 0 && pmatch.rm_so == 0) {
         char *substr_start = e + position;
         int substr_len = pmatch.rm_eo;
         Log("match rules[%d] = \"%s\" at position %d with len %d: %.*s",
             i, rules[i].regex, position, substr_len, substr_len, substr_start);
         position += substr_len;
+
 // 用正则表达式识别出一个 token（记号），将其信息（类型和内容）保存到 tokens 数组里，并维护 nr_token 计数。
         switch (rules[i].token_type) {
           case TK_NOTYPE: // 空格
@@ -148,9 +148,10 @@ static bool make_token(char *e) {
       return false;
     }
   }
+
   for ( i = 0; i < nr_token; i++){
  // 如果 * 出现在表达式开头，或出现在另一个运算符之后，或出现在左括号 ( 之后，则它是 unary deref（TK_DEREF）。
-    if (tokens[i].type == '*'){
+    if (tokens[i].type == '*' || tokens[i].type == '-'|| tokens[i].type == '+'){
       if (i ==0                       ||
         tokens[i-1].type == '+'       ||
         tokens[i-1].type == '-'       ||
@@ -160,8 +161,21 @@ static bool make_token(char *e) {
         tokens[i-1].type == TK_NOTEQ  ||
         tokens[i-1].type == TK_AND    ||
         tokens[i-1].type == TK_OR     ||
+        tokens[i-1].type == TK_NEG    ||
+        tokens[i-1].type == TK_PLUS   ||
         tokens[i-1].type == '('       ){
-          tokens[i].type = TK_DEREF;    
+        switch (tokens[i].type){
+        case '*':
+          tokens[i].type = TK_DEREF;
+          break;
+        case '-':
+          tokens[i].type = TK_NEG;
+          break;
+        case '+':
+          tokens[i].type = TK_PLUS;
+          break;
+        default: break;
+        }
       }
     }
   }
@@ -193,7 +207,7 @@ int get_priortiy(int type){
      小数值 = 高优先级（先计算）；大数值 = 低优先级（更可能被选为主运算符）。
   */
   switch (type){
-    case TK_DEREF : return 1;   /* 一元解引用/一元运算：最高优先级（最强绑定） */
+    case TK_DEREF : case TK_NEG: case TK_PLUS :return 1;   /* 一元解引用/一元运算：最高优先级（最强绑定） */
     case   '*'    : return 4;
     case   '/'    : return 4;
     case   '+'    : return 5;
@@ -255,13 +269,24 @@ word_t eval(int l,int r,bool *success,bool *hex){
     // 括号对检查合法，且表达式两边都存在括号，去除括号再次递归
       return eval(l+1,r-1,success,hex);
   } else {        
-    // 表达式非整体被括号，进入找主运算符拆分两个表达式重复递归                                                                          
+    // 单目运算符处理                                                                      
       int op = find_main_operator(l,r,success);
-      if (tokens[op].type == TK_DEREF){
-        word_t addr = eval(l+1,r,success,hex);
-        return vaddr_read(addr,sizeof(int));
-      } else {
-      // 利用*success 检查主运算符
+      if (tokens[op].type == TK_DEREF ||tokens[op].type == TK_NEG || tokens[op].type == TK_PLUS){
+        switch (tokens[op].type){
+        case TK_DEREF:
+          word_t addr = eval(l+1,r,success,hex);
+          return vaddr_read(addr,sizeof(int));
+          break;
+        case TK_NEG :
+          word_t num_neg = eval(l+1,r,success,hex);
+          return -num_neg;
+          break;
+        default :
+          word_t num_plus = eval(l+1,r,success,hex);
+          return num_plus;
+          break;
+        }} else {
+      // 双目运算符处理
       if (*success == false) return 0;
       val1 = eval(l,op-1,success,hex);
       val2 = eval(op+1,r,success,hex);
@@ -271,13 +296,22 @@ word_t eval(int l,int r,bool *success,bool *hex){
         case '*': return val1 * val2;
         case TK_EQ    : return (word_t) (val1 == val2 ? 1 : 0); 
         case TK_NOTEQ : return (word_t) (val1 != val2 ? 1 : 0); 
-        case TK_AND   : return (word_t) (val1 && val2 );
-        case TK_OR    : return (word_t) (val1 || val2 );
-        case '/':
-          if (val2 == 0) {
-            printf("division by zero\n");
-            *success = false;
+        case TK_AND   : 
+          if (val1==0 || val2==0){
             return 0;
+          } else return (word_t) (val1 && val2 );
+        case TK_OR    : 
+          if (val1==1 || val2==1){
+            return 1;
+          } else return (word_t) (val1 && val2 );
+        return (word_t) (val1 || val2 );
+        case '/':
+          if (tokens[op].type != TK_AND || tokens[op].type != TK_OR){
+            if (val2 == 0) {
+              printf("division by zero\n");
+              *success = false;
+              return 0;
+            }
           }
           return val1 / val2;
         // 其它类型如 TK_NUM、TK_REG、括号等在递归出口已处理
@@ -285,7 +319,8 @@ word_t eval(int l,int r,bool *success,bool *hex){
       }
      }
     }
-  }
+  }  
+
 
 word_t expr(char *e, bool *success, bool *hex) {
   if (!make_token(e)) {
@@ -315,12 +350,14 @@ int eval_input_file(const char *path) {
 
   char line[4096];
   while (fgets(line, sizeof(line), f)) {
-    /* strip newline & leading/trailing whitespace */
     char *p = line;
-    while (*p && (*p == ' ' || *p == '\t')) p++; /* skip leading ws */
+// 跳过行首空白符与制表符
+    while (*p && (*p == ' ' || *p == '\t')) p++; 
     char *end = p + strlen(p);
+// 截断行尾换行符，回车符，制表符
     while (end > p && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t')) end--;
     *end = '\0';
+// 处理全行空格，导致p指向行尾结束符直接跳过
     if (*p == '\0') continue;
 
     bool success = false;
